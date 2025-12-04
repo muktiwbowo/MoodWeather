@@ -16,77 +16,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.svault.moodweather.domain.model.MoodEntry
-import com.svault.moodweather.domain.model.MoodType
-import com.svault.moodweather.domain.model.WeatherCondition
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     onNavigateBack: () -> Unit
 ) {
-    // Mock data grouped by date
-    val entriesByMonth = remember {
-        listOf(
-            MoodEntry(
-                id = "1",
-                moodType = MoodType.HAPPY,
-                weatherCondition = WeatherCondition.SUNNY,
-                temperature = 24.0,
-                note = "Great day at the park!",
-                timestamp = LocalDateTime.now()
-            ),
-            MoodEntry(
-                id = "2",
-                moodType = MoodType.CALM,
-                weatherCondition = WeatherCondition.CLOUDY,
-                temperature = 18.0,
-                note = "Relaxing morning coffee",
-                timestamp = LocalDateTime.now().minusDays(1)
-            ),
-            MoodEntry(
-                id = "3",
-                moodType = MoodType.SAD,
-                weatherCondition = WeatherCondition.RAINY,
-                temperature = 15.0,
-                note = "Feeling a bit down",
-                timestamp = LocalDateTime.now().minusDays(2)
-            ),
-            MoodEntry(
-                id = "4",
-                moodType = MoodType.EXCITED,
-                weatherCondition = WeatherCondition.SUNNY,
-                temperature = 26.0,
-                note = "Got promoted at work!",
-                timestamp = LocalDateTime.now().minusDays(3)
-            ),
-            MoodEntry(
-                id = "5",
-                moodType = MoodType.ANXIOUS,
-                weatherCondition = WeatherCondition.STORMY,
-                temperature = 14.0,
-                note = "Big presentation tomorrow",
-                timestamp = LocalDateTime.now().minusDays(5)
-            ),
-            MoodEntry(
-                id = "6",
-                moodType = MoodType.HAPPY,
-                weatherCondition = WeatherCondition.CLOUDY,
-                temperature = 20.0,
-                note = "Movie night with friends",
-                timestamp = LocalDateTime.now().minusDays(7)
-            )
-        ).groupBy {
-            "${it.timestamp.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${it.timestamp.year}"
-        }
-    }
+    val context = LocalContext.current
+    val viewModel = remember { HistoryViewModel(context) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -99,55 +45,86 @@ fun HistoryScreen(
                             contentDescription = "Back"
                         )
                     }
-                },
-                actions = {
-                    IconButton(onClick = { /* TODO: Filter */ }) {
-                        Icon(
-                            imageVector = Icons.Default.FilterList,
-                            contentDescription = "Filter"
-                        )
-                    }
-                    IconButton(onClick = { /* TODO: Calendar view */ }) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = "Calendar"
-                        )
-                    }
                 }
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                MonthlyStatsCard(entriesByMonth.values.flatten())
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
             }
-
-            entriesByMonth.forEach { (month, entries) ->
+        } else if (uiState.entriesByMonth.isEmpty()) {
+            EmptyHistoryState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 item {
-                    Text(
-                        text = month,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    MonthlyStatsCard(uiState.entriesByMonth.values.flatten())
                 }
 
-                items(entries.sortedByDescending { it.timestamp }) { entry ->
-                    HistoryEntryCard(entry)
-                }
-            }
+                uiState.entriesByMonth.forEach { (month, entries) ->
+                    item {
+                        Text(
+                            text = month,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
 
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
+                    items(entries.sortedByDescending { it.timestamp }) { entry ->
+                        HistoryEntryCard(entry)
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
+    }
+}
+
+@Composable
+fun EmptyHistoryState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "📅",
+            fontSize = 80.sp
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "No History Yet",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Your mood journey will appear here as you log entries",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
     }
 }
 
