@@ -4,24 +4,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.svault.moodweather.domain.model.MoodEntry
-import com.svault.moodweather.domain.model.MoodType
-import com.svault.moodweather.domain.model.WeatherCondition
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -32,33 +31,9 @@ fun HomeScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToAnalytics: () -> Unit
 ) {
-    // Mock data for now
-    val recentEntries = listOf(
-        MoodEntry(
-            id = "1",
-            moodType = MoodType.HAPPY,
-            weatherCondition = WeatherCondition.SUNNY,
-            temperature = 24.0,
-            note = "Great day at the park!",
-            timestamp = LocalDateTime.now().minusDays(0)
-        ),
-        MoodEntry(
-            id = "2",
-            moodType = MoodType.CALM,
-            weatherCondition = WeatherCondition.CLOUDY,
-            temperature = 18.0,
-            note = "Relaxing morning coffee",
-            timestamp = LocalDateTime.now().minusDays(1)
-        ),
-        MoodEntry(
-            id = "3",
-            moodType = MoodType.SAD,
-            weatherCondition = WeatherCondition.RAINY,
-            temperature = 15.0,
-            note = "Feeling a bit down",
-            timestamp = LocalDateTime.now().minusDays(2)
-        )
-    )
+    val context = LocalContext.current
+    val viewModel = remember { HomeViewModel(context) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -103,37 +78,99 @@ fun HomeScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (uiState.recentEntries.isEmpty()) {
+            EmptyState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                onLogMoodClick = onNavigateToAddMood
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    GreetingCard()
+                }
+
+                item {
+                    QuickStatsCard(uiState.thisWeekEntries)
+                }
+
+                item {
+                    Text(
+                        text = "Recent Entries",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+
+                items(uiState.recentEntries) { entry ->
+                    MoodEntryCard(entry)
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyState(
+    modifier: Modifier = Modifier,
+    onLogMoodClick: () -> Unit
+) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "📝",
+            fontSize = 80.sp
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "No Entries Yet",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Start tracking your mood and discover how weather affects your emotions",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(
+            onClick = onLogMoodClick,
+            modifier = Modifier.fillMaxWidth(0.7f)
         ) {
-            item {
-                GreetingCard()
-            }
-
-            item {
-                QuickStatsCard(recentEntries)
-            }
-
-            item {
-                Text(
-                    text = "Recent Entries",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-
-            items(recentEntries) { entry ->
-                MoodEntryCard(entry)
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
-            }
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Log Your First Mood")
         }
     }
 }
@@ -191,27 +228,36 @@ fun QuickStatsCard(entries: List<MoodEntry>) {
             )
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatItem(
-                    icon = Icons.Default.EventNote,
-                    value = entries.size.toString(),
-                    label = "Entries"
+            if (entries.isEmpty()) {
+                Text(
+                    text = "No entries this week yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
-                StatItem(
-                    icon = Icons.Default.EmojiEmotions,
-                    value = entries.groupBy { it.moodType }
-                        .maxByOrNull { it.value.size }?.key?.displayName ?: "N/A",
-                    label = "Top Mood"
-                )
-                StatItem(
-                    icon = Icons.Default.Cloud,
-                    value = entries.groupBy { it.weatherCondition }
-                        .maxByOrNull { it.value.size }?.key?.emoji ?: "N/A",
-                    label = "Weather"
-                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(
+                        icon = Icons.Default.EventNote,
+                        value = entries.size.toString(),
+                        label = "Entries"
+                    )
+                    StatItem(
+                        icon = Icons.Default.EmojiEmotions,
+                        value = entries.groupBy { it.moodType }
+                            .maxByOrNull { it.value.size }?.key?.displayName ?: "N/A",
+                        label = "Top Mood"
+                    )
+                    StatItem(
+                        icon = Icons.Default.Cloud,
+                        value = entries.groupBy { it.weatherCondition }
+                            .maxByOrNull { it.value.size }?.key?.emoji ?: "N/A",
+                        label = "Weather"
+                    )
+                }
             }
         }
     }
@@ -249,7 +295,6 @@ fun StatItem(
 @Composable
 fun MoodEntryCard(entry: MoodEntry) {
     val dateFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
-    val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a")
 
     Card(
         modifier = Modifier
